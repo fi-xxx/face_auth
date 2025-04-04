@@ -255,4 +255,13 @@ def login():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True) 
+    print("加载证书中...", os.path.exists(r"D:\openSSL\cert.pem"))
+    app.run(
+        host='0.0.0.0',
+        port=5001,
+        debug=True,
+        ssl_context=(
+            r"D:\openSSL\cert.pem",  # 你的证书路径
+            r"D:\openSSL\key.pem"    # 你的私钥路径
+        )
+    )
