@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>控制面板 - 人脸识别系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- 侧边导航栏 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>人脸识别系统</h2>
+            </div>
+            <ul class="sidebar-menu">
+                <li onclick="dashboard.showSection('users')" class="active">
+                    <i class="icon">👥</i>
+                    <span>用户列表</span>
+                </li>
+                <li onclick="dashboard.showSection('emotion')">
+                    <i class="icon">😊</i>
+                    <span>记录情绪</span>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- 主要内容区域 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="header">
+                <div class="user-info">
+                    <span class="username">{{ current_user }}</span>
+                    <button class="logout-btn" onclick="dashboard.logout()">退出</button>
+                </div>
+            </div>
+            
+            <!-- 内容区域 -->
+            <div class="content-wrapper">
+                <!-- 用户列表部分 -->
+                <div id="users-section" class="content-section active">
+                    <div class="section-header">
+                        <h2>用户列表</h2>
+                        <div class="section-tools">
+                            <input type="text" id="searchUser" placeholder="搜索用户..." class="search-input">
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>用户名</th>
+                                    <th>最近情绪</th>
+                                    <th>记录时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>{{ user.username }}</td>
+                                    <td>
+                                        <span class="emotion-badge {{ user.latest_emotion|lower if user.latest_emotion else 'neutral' }}">
+                                            {{ user.latest_emotion or '暂无记录' }}
+                                        </span>
+                                    </td>
+                                    <td>{{ user.emotion_time.strftime('%Y-%m-%d %H:%M:%S') if user.emotion_time else '暂无记录' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- 情绪记录部分 -->
+                <div id="emotion-section" class="content-section">
+                    <div class="section-header">
+                        <h2>记录情绪</h2>
+                    </div>
+                    <div class="emotion-capture">
+                        <div class="video-container">
+                            <video id="video" autoplay></video>
+                            <canvas id="canvas" style="display: none;"></canvas>
+                        </div>
+                        <div class="capture-controls">
+                            <button id="capture-btn" class="capture-btn">捕获表情</button>
+                        </div>
+                        <div id="emotion-result" class="emotion-result" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html> 

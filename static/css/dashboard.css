@@ -1,0 +1,289 @@
+/* 基础样式重置 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f6fa;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 仪表盘容器 */
+.dashboard-container {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* 侧边栏样式 */
+.sidebar {
+    width: 250px;
+    height: 100vh;
+    background-color: #2c3e50;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid #34495e;
+}
+
+.sidebar-header h2 {
+    font-size: 1.2rem;
+    font-weight: 500;
+}
+
+.sidebar-menu {
+    list-style: none;
+    padding: 0;
+}
+
+.sidebar-menu li {
+    padding: 15px 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.3s;
+}
+
+.sidebar-menu li:hover {
+    background-color: #34495e;
+}
+
+.sidebar-menu li.active {
+    background-color: #3498db;
+}
+
+.sidebar-menu .icon {
+    margin-right: 10px;
+    font-size: 1.2rem;
+}
+
+/* 主要内容区域 */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: 100vh;
+}
+
+/* 顶部栏 */
+.header {
+    background-color: white;
+    padding: 15px 30px;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* 用户信息样式 */
+.username {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: #2c3e50;
+}
+
+.logout-btn {
+    padding: 6px 15px;
+    border: none;
+    border-radius: 4px;
+    background-color: #e74c3c;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    font-size: 0.9rem;
+}
+
+.logout-btn:hover {
+    background-color: #c0392b;
+}
+
+/* 内容区域 */
+.content-wrapper {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
+    width: 100%;
+}
+
+.content-section {
+    display: none;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    height: 100%;
+    width: 100%;
+}
+
+.content-section.active {
+    display: block;
+}
+
+/* 区域头部 */
+.section-header {
+    padding: 20px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: white;
+}
+
+.section-tools {
+    margin-bottom: 20px;
+}
+
+.search-input {
+    width: 300px;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: #3498db;
+}
+
+/* 表格样式 */
+.table-container {
+    height: calc(100vh - 180px);
+    overflow-y: auto;
+    width: 100%;
+    padding: 0 20px;
+}
+
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 800px;
+}
+
+.users-table th {
+    padding: 15px 20px;
+    text-align: left;
+    background-color: #f8f9fa;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    border-bottom: 2px solid #eee;
+}
+
+.users-table td {
+    padding: 15px 20px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.users-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+/* 情绪标签样式 */
+.emotion-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: inline-block;
+    min-width: 100px;
+    text-align: center;
+}
+
+.emotion-badge.开心 { background-color: #a8e6cf; color: #1b4332; }
+.emotion-badge.伤心 { background-color: #ffd3b6; color: #7c3c21; }
+.emotion-badge.愤怒 { background-color: #ffaaa5; color: #6a1b1b; }
+.emotion-badge.平静 { background-color: #dcedc1; color: #3e5622; }
+.emotion-badge.惊讶 { background-color: #b8c0ff; color: #2c3784; }
+.emotion-badge.疲惫 { background-color: #e9ecef; color: #495057; }
+.emotion-badge.neutral { background-color: #e9ecef; color: #495057; }
+
+/* 情绪捕获区域 */
+.emotion-capture {
+    padding: 20px;
+    text-align: center;
+}
+
+.video-container {
+    max-width: 800px;
+    margin: 0 auto;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+#video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.capture-controls {
+    margin-top: 20px;
+}
+
+.capture-btn {
+    padding: 12px 24px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.capture-btn:hover {
+    background-color: #2980b9;
+}
+
+.emotion-result {
+    margin-top: 20px;
+    padding: 15px;
+    border-radius: 4px;
+    background-color: #e3f2fd;
+    color: #1565c0;
+    font-weight: 500;
+    display: none;
+}
+
+.emotion-result.error {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
+.emotion-result.success {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+

@@ -95,6 +95,8 @@ class FaceAuth {
         const context = this.canvas.getContext('2d');
         let detectionAttempts = 0;
         const maxAttempts = 100;
+        let lastEar = 1.0;  // 添加上一次的 EAR 值
+        let blinkDetected = false;  // 添加眨眼检测标志
         
         const detect = async () => {
             if (!this.isDetecting || detectionAttempts >= maxAttempts) {
@@ -112,22 +114,32 @@ class FaceAuth {
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ 
-                        image: imageData,
-                        action_type: 'blink'
-                    })
+                    body: JSON.stringify({ image: imageData })
                 });
                 
                 const result = await response.json();
-                if (result.detected) {
-                    // 活体检测成功，处理下一步
+                console.log('眨眼检测结果:', result);
+                
+                // 检查是否是有效的眨眼动作（需要先睁眼再闭眼）
+                if (result.ear && lastEar) {
+                    const earDiff = lastEar - result.ear;
+                    if (earDiff > 0.1 && result.ear < 0.19) {  // 眨眼的条件更严格
+                        blinkDetected = true;
+                    }
+                }
+                
+                if (blinkDetected) {
+                    console.log('检测到有效的眨眼动作');
                     this.onLiveDetectionSuccess();
                     return;
                 }
                 
+                lastEar = result.ear;  // 更新上一次的 EAR 值
                 detectionAttempts++;
                 requestAnimationFrame(detect);
+                
             } catch (err) {
+                console.error('眨眼检测错误:', err);
                 this.showError('检测出错: ' + err.message);
                 this.resetDetection();
             }
@@ -149,8 +161,34 @@ class FaceAuth {
     }
 
     async loginExistingUser() {
-        this.showSuccess(`验证通过，欢迎回来，${this.existingUsername}！`);
-        // 这里可以添加登录后的跳转逻辑
+        this.showLoading('正在登录...');
+        
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    image: this.tempFaceData
+                })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showSuccess(`登录成功，欢迎 ${result.username}！`);
+                // 添加重定向
+                if (result.redirect) {
+                    window.location.href = result.redirect;
+                }
+            } else {
+                this.showError(result.message);
+                this.resetDetection();
+            }
+        } catch (err) {
+            this.showError('登录失败: ' + err.message);
+            this.resetDetection();
+        }
     }
 
     resetDetection() {
@@ -192,7 +230,8 @@ class FaceAuth {
             const result = await response.json();
             if (result.success) {
                 this.showSuccess(`注册成功，欢迎 ${username}！`);
-                this.registerForm.style.display = 'none';
+                // 添加重定向
+                window.location.href = '/dashboard';
             } else {
                 this.showError(result.message);
                 this.confirmRegisterButton.disabled = false;
