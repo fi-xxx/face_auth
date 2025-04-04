@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人脸识别登录系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>人脸识别登录系统</h1>
+        
+        <div class="main-content">
+            <video id="video" autoplay></video>
+            <canvas id="canvas"></canvas>
+            
+            <!-- 活体检测提示 -->
+            <div id="liveDetection" style="display: none;">
+                <p id="detectionInstruction">请眨眨眼完成活体检测</p>
+            </div>
+
+            <!-- 用户名输入框默认隐藏 -->
+            <div id="registerForm" class="form-group" style="display: none;">
+                <div class="input-button-group">
+                    <input type="text" id="username" placeholder="请输入您的姓名" />
+                    <button id="confirmRegister">确认注册</button>
+                </div>
+            </div>
+
+            <button id="capture">开始识别</button>
+            <div id="status"></div>
+        </div>
+    </div>
+    <script src="/static/js/main.js"></script>
+</body>
+</html> 
