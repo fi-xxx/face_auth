@@ -187,7 +187,7 @@ DB_NAME=face_auth
 
 ## 维护者
 
-[您的名字/组织]
+[fixxx]
 
 ## 许可证
 
