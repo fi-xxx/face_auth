@@ -3,95 +3,114 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>控制面板 - 人脸识别系统</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <title>仪表板</title>
     <link rel="stylesheet" href="/static/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
     <div class="dashboard-container">
-        <!-- 侧边导航栏 -->
+        <!-- 侧边栏 -->
         <div class="sidebar">
-            <div class="sidebar-header">
-                <h2>人脸识别系统</h2>
+            <div class="user-info">
+                <span class="username">{{ current_user }}</span>
+                <button id="logoutBtn" class="logout-btn">退出</button>
             </div>
-            <ul class="sidebar-menu">
-                <li onclick="dashboard.showSection('users')" class="active">
-                    <i class="icon">👥</i>
-                    <span>用户列表</span>
-                </li>
-                <li onclick="dashboard.showSection('emotion')">
-                    <i class="icon">😊</i>
-                    <span>记录情绪</span>
-                </li>
-            </ul>
+            <nav class="sidebar-menu">
+                <ul>
+                    <li class="active" data-section="users">
+                        <span class="icon">👥</span>
+                        <span>用户列表</span>
+                    </li>
+                    <li data-section="emotion">
+                        <span class="icon">📸</span>
+                        <span>情绪记录</span>
+                    </li>
+                    <li data-section="analysis">
+                        <span class="icon">📊</span>
+                        <span>情绪分析</span>
+                    </li>
+                </ul>
+            </nav>
         </div>
-        
+
         <!-- 主要内容区域 -->
         <div class="main-content">
-            <!-- 顶部栏 -->
-            <div class="header">
-                <div class="user-info">
-                    <span class="username">{{ current_user }}</span>
-                    <button class="logout-btn" onclick="dashboard.logout()">退出</button>
+            <!-- 用户列表部分 -->
+            <div id="users-section" class="content-section active">
+                <div class="section-header">
+                    <h2>用户列表</h2>
+                    <div class="section-tools">
+                        <input type="text" id="userSearch" class="search-input" placeholder="搜索用户...">
+                    </div>
+                </div>
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th>用户名</th>
+                            <th>最新情绪</th>
+                            <th>记录时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="user-list">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 情绪记录部分 -->
+            <div id="emotion-section" class="content-section">
+                <h2>情绪记录</h2>
+                <div class="video-container">
+                    <video id="video" autoplay playsinline></video>
+                    <div class="capture-controls">
+                        <button id="captureBtn" class="capture-btn">捕获表情</button>
+                    </div>
+                    <div id="emotionResult" class="emotion-result"></div>
                 </div>
             </div>
-            
-            <!-- 内容区域 -->
-            <div class="content-wrapper">
-                <!-- 用户列表部分 -->
-                <div id="users-section" class="content-section active">
-                    <div class="section-header">
-                        <h2>用户列表</h2>
-                        <div class="section-tools">
-                            <input type="text" id="searchUser" placeholder="搜索用户..." class="search-input">
+
+            <!-- 情绪分析部分 -->
+            <div id="analysis-section" class="content-section">
+                <div class="section-header">
+                    <h2>情绪分析</h2>
+                    <div class="analysis-toolbar">
+                        <div class="select-wrapper">
+                            <select id="timeRange" class="custom-select">
+                                <option value="7">最近7天</option>
+                                <option value="30">最近30天</option>
+                                <option value="90">最近90天</option>
+                            </select>
                         </div>
-                    </div>
-                    <div class="table-container">
-                        <table class="users-table">
-                            <thead>
-                                <tr>
-                                    <th>用户名</th>
-                                    <th>最近情绪</th>
-                                    <th>记录时间</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for user in users %}
-                                <tr>
-                                    <td>{{ user.username }}</td>
-                                    <td>
-                                        <span class="emotion-badge {{ user.latest_emotion|lower if user.latest_emotion else 'neutral' }}">
-                                            {{ user.latest_emotion or '暂无记录' }}
-                                        </span>
-                                    </td>
-                                    <td>{{ user.emotion_time.strftime('%Y-%m-%d %H:%M:%S') if user.emotion_time else '暂无记录' }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                        <div class="select-wrapper">
+                            <select id="chartType" class="custom-select">
+                                <option value="line">折线图</option>
+                                <option value="bar">柱状图</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 
-                <!-- 情绪记录部分 -->
-                <div id="emotion-section" class="content-section">
-                    <div class="section-header">
-                        <h2>记录情绪</h2>
+                <div class="stats-container">
+                    <div class="stat-card">
+                        <h3>主要情绪</h3>
+                        <p id="mainEmotion">-</p>
                     </div>
-                    <div class="emotion-capture">
-                        <div class="video-container">
-                            <video id="video" autoplay></video>
-                            <canvas id="canvas" style="display: none;"></canvas>
-                        </div>
-                        <div class="capture-controls">
-                            <button id="capture-btn" class="capture-btn">捕获表情</button>
-                        </div>
-                        <div id="emotion-result" class="emotion-result" style="display: none;"></div>
+                    <div class="stat-card">
+                        <h3>情绪波动指数</h3>
+                        <p id="emotionVariation">-</p>
                     </div>
+                    <div class="stat-card">
+                        <h3>记录次数</h3>
+                        <p id="recordCount">-</p>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="emotionChart"></canvas>
                 </div>
             </div>
         </div>
     </div>
-
     <script src="/static/js/dashboard.js"></script>
 </body>
 </html> 

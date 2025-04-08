@@ -1,269 +1,317 @@
 class FaceAuth {
     constructor() {
-        this.video = document.getElementById('video');
-        this.canvas = document.getElementById('canvas');
-        this.captureButton = document.getElementById('capture');
-        this.statusDiv = document.getElementById('status');
-        this.usernameInput = document.getElementById('username');
-        this.registerForm = document.getElementById('registerForm');
-        this.confirmRegisterButton = document.getElementById('confirmRegister');
-        this.liveDetection = document.getElementById('liveDetection');
-        this.detectionInstruction = document.getElementById('detectionInstruction');
-        
-        this.tempFaceData = null;
-        this.isDetecting = false;
-        this.isNewUser = false;
-        
-        this.setupCanvas();
+        this.initializeElements();
         this.setupEventListeners();
+        this.startVideo();
     }
-    
-    setupCanvas() {
-        this.canvas.width = 640;
-        this.canvas.height = 480;
+
+    initializeElements() {
+        this.video = document.getElementById('video');
+        
+        // 登录页面元素
+        this.detectButton = document.getElementById('detect-face');
+        this.blinkText = document.getElementById('blink-text');
+        this.registerForm = document.getElementById('registerForm');
+        this.username = document.getElementById('username');
+        this.confirmRegister = document.getElementById('confirmRegister');
+        
+        // 仪表板页面元素
+        this.captureButton = document.querySelector('.capture-btn');
+        this.userListTab = document.querySelector('[data-tab="user-list"]');
+        
+        // 初始化计数器
+        this.blinkCount = 0;
+        this.maxDetectionAttempts = 50;
+        this.detectionAttempts = 0;
     }
-    
+
     setupEventListeners() {
-        this.captureButton.addEventListener('click', () => this.startRecognition());
-        this.confirmRegisterButton.addEventListener('click', () => this.register());
-        this.usernameInput.addEventListener('input', () => {
-            this.confirmRegisterButton.disabled = !this.usernameInput.value.trim();
-        });
+        // 登录页面事件
+        if (this.detectButton) {
+            this.detectButton.addEventListener('click', () => this.detectFace());
+        }
+        
+        // 仪表板页面事件
+        if (this.captureButton) {
+            this.captureButton.addEventListener('click', () => this.captureEmotion());
+        }
+        if (this.userListTab) {
+            this.userListTab.addEventListener('click', () => this.updateUserList());
+        }
+
+        // 添加导航切换功能
+        const navLinks = document.querySelectorAll('.sidebar nav a');
+        if (navLinks.length > 0) {
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.switchTab(link.getAttribute('data-tab'));
+                });
+            });
+
+            // 初始化时更新用户列表
+            this.updateUserList();
+        }
     }
-    
-    async setupCamera() {
+
+    async startVideo() {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            this.video.srcObject = stream;
-            this.captureButton.disabled = false;
-        } catch (err) {
-            this.showError('无法访问摄像头: ' + err.message);
-        }
-    }
-
-    async startRecognition() {
-        this.captureButton.disabled = true;
-        this.showLoading('正在识别...');
-        
-        // 捕获图像
-        const context = this.canvas.getContext('2d');
-        context.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-        const imageData = this.canvas.toDataURL('image/jpeg');
-        this.tempFaceData = imageData;
-        
-        try {
-            const response = await fetch('/check_face', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ image: imageData })
-            });
-            
-            const result = await response.json();
-            
-            if (!result.success) {
-                this.showError(result.message);
-                this.captureButton.disabled = false;
-                return;
-            }
-            
-            // 存储用户状态和信息
-            this.isNewUser = !result.exists;
-            if (result.exists) {
-                this.existingUsername = result.username;
-            }
-            
-            // 开始活体检测
-            this.startLiveDetection();
-            
-        } catch (err) {
-            this.showError('识别出错: ' + err.message);
-            this.captureButton.disabled = false;
-        }
-    }
-
-    async startLiveDetection() {
-        this.isDetecting = true;
-        this.liveDetection.style.display = 'block';
-        this.captureButton.style.display = 'none';
-        this.detectionInstruction.textContent = '请眨眨眼';
-        this.detectBlink();
-    }
-
-    async detectBlink() {
-        const context = this.canvas.getContext('2d');
-        let detectionAttempts = 0;
-        const maxAttempts = 100;
-        let lastEar = 1.0;  // 添加上一次的 EAR 值
-        let blinkDetected = false;  // 添加眨眼检测标志
-        
-        const detect = async () => {
-            if (!this.isDetecting || detectionAttempts >= maxAttempts) {
-                this.showError('检测超时，请重试');
-                this.resetDetection();
-                return;
-            }
-            
-            context.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
-            const imageData = this.canvas.toDataURL('image/jpeg');
-            
-            try {
-                const response = await fetch('/detect_action', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ image: imageData })
-                });
-                
-                const result = await response.json();
-                console.log('眨眼检测结果:', result);
-                
-                // 检查是否是有效的眨眼动作（需要先睁眼再闭眼）
-                if (result.ear && lastEar) {
-                    const earDiff = lastEar - result.ear;
-                    if (earDiff > 0.1 && result.ear < 0.19) {  // 眨眼的条件更严格
-                        blinkDetected = true;
-                    }
-                }
-                
-                if (blinkDetected) {
-                    console.log('检测到有效的眨眼动作');
-                    this.onLiveDetectionSuccess();
-                    return;
-                }
-                
-                lastEar = result.ear;  // 更新上一次的 EAR 值
-                detectionAttempts++;
-                requestAnimationFrame(detect);
-                
-            } catch (err) {
-                console.error('眨眼检测错误:', err);
-                this.showError('检测出错: ' + err.message);
-                this.resetDetection();
-            }
-        };
-        
-        detect();
-    }
-
-    async onLiveDetectionSuccess() {
-        this.liveDetection.style.display = 'none';
-        
-        if (this.isNewUser) {
-            // 新用户，显示注册表单
-            this.showNewUserForm();
-        } else {
-            // 已存在用户，直接登录
-            await this.loginExistingUser();
-        }
-    }
-
-    async loginExistingUser() {
-        this.showLoading('正在登录...');
-        
-        try {
-            const response = await fetch('/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    image: this.tempFaceData
-                })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-                this.showSuccess(`登录成功，欢迎 ${result.username}！`);
-                // 添加重定向
-                if (result.redirect) {
-                    window.location.href = result.redirect;
-                }
-            } else {
-                this.showError(result.message);
-                this.resetDetection();
+            if (this.video) {
+                this.video.srcObject = stream;
             }
         } catch (err) {
-            this.showError('登录失败: ' + err.message);
-            this.resetDetection();
+            console.error('摄像头访问错误:', err);
+            if (this.blinkText) {
+                this.blinkText.textContent = '无法访问摄像头，请确保已授予权限';
+            }
         }
     }
 
-    resetDetection() {
-        this.isDetecting = false;
-        this.liveDetection.style.display = 'none';
-        this.captureButton.style.display = 'block';
-        this.captureButton.disabled = false;
-    }
-
-    showNewUserForm() {
-        this.registerForm.style.display = 'block';
-        this.captureButton.style.display = 'none';
-        this.showStatus('新用户，请输入您的姓名进行注册');
-        this.confirmRegisterButton.disabled = true;
-    }
-
-    async register() {
-        const username = this.usernameInput.value.trim();
-        if (!username) {
-            this.showError('请输入姓名');
+    detectFace() {
+        if (!this.video || !this.video.videoWidth) {
+            alert('请确保摄像头已开启');
             return;
         }
 
-        this.confirmRegisterButton.disabled = true;
-        this.showLoading('正在注册...');
+        this.blinkText.textContent = '请眨眼...';
+        this.detectBlink();
+    }
 
-        try {
-            const response = await fetch('/register', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ 
-                    image: this.tempFaceData,
-                    username: username
-                })
-            });
+    detectBlink() {
+        if (this.detectionAttempts >= this.maxDetectionAttempts) {
+            this.blinkText.textContent = '未检测到眨眼，请重试';
+            this.detectionAttempts = 0;
+            return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = this.video.videoWidth;
+        canvas.height = this.video.videoHeight;
+        
+        const context = canvas.getContext('2d');
+        context.drawImage(this.video, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = canvas.toDataURL('image/jpeg');
+
+        fetch('/detect_action', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image: imageData
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.detected) {
+                this.blinkCount++;
+                this.blinkText.textContent = `检测到眨眼 ${this.blinkCount} 次`;
+                
+                if (this.blinkCount >= 2) {
+                    this.checkFace();
+                    return;
+                }
+            }
             
-            const result = await response.json();
-            if (result.success) {
-                this.showSuccess(`注册成功，欢迎 ${username}！`);
-                // 添加重定向
+            this.detectionAttempts++;
+            setTimeout(() => this.detectBlink(), 100);
+        })
+        .catch(error => {
+            console.error('检测错误:', error);
+            this.blinkText.textContent = '检测出错，请重试';
+        });
+    }
+
+    checkFace() {
+        const canvas = document.createElement('canvas');
+        canvas.width = this.video.videoWidth;
+        canvas.height = this.video.videoHeight;
+        
+        const context = canvas.getContext('2d');
+        context.drawImage(this.video, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = canvas.toDataURL('image/jpeg');
+
+        this.blinkText.textContent = '正在验证...';
+
+        fetch('/check_face', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image: imageData
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.exists) {
                 window.location.href = '/dashboard';
             } else {
-                this.showError(result.message);
-                this.confirmRegisterButton.disabled = false;
+                this.blinkText.textContent = data.message || '验证失败，请重试';
             }
-        } catch (err) {
-            this.showError('注册失败: ' + err.message);
-            this.confirmRegisterButton.disabled = false;
+        })
+        .catch(error => {
+            console.error('验证错误:', error);
+            this.blinkText.textContent = '验证出错，请重试';
+        });
+    }
+
+    captureEmotion() {
+        if (!this.video || !this.video.videoWidth) {
+            Swal.fire({
+                title: '错误',
+                text: '摄像头未就绪，请稍后再试',
+                icon: 'error',
+                confirmButtonText: '确定'
+            });
+            return;
         }
+
+        Swal.fire({
+            title: '处理中...',
+            text: '正在分析情绪，请稍候',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = this.video.videoWidth;
+        canvas.height = this.video.videoHeight;
+        
+        const context = canvas.getContext('2d');
+        context.drawImage(this.video, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = canvas.toDataURL('image/jpeg');
+
+        fetch('/record_emotion', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image: imageData
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.status === 'success') {
+                Swal.fire({
+                    title: '记录成功！',
+                    html: `
+                        <div style="margin: 20px 0;">
+                            <p style="font-size: 1.2em;">检测到的情绪：</p>
+                            <p style="font-size: 1.5em; color: #4CAF50; margin: 10px 0;">
+                                ${data.emotion}
+                            </p>
+                        </div>
+                    `,
+                    icon: 'success',
+                    confirmButtonText: '确定',
+                    confirmButtonColor: '#4CAF50'
+                }).then(() => {
+                    this.updateUserList();
+                });
+            } else {
+                Swal.fire({
+                    title: '记录失败',
+                    text: data.message || '未知错误',
+                    icon: 'error',
+                    confirmButtonText: '确定'
+                });
+            }
+        })
+        .catch(error => {
+            console.error('请求错误:', error);
+            Swal.close();
+            Swal.fire({
+                title: '发生错误',
+                text: error.toString(),
+                icon: 'error',
+                confirmButtonText: '确定'
+            });
+        });
     }
 
-    showStatus(message) {
-        this.statusDiv.textContent = message;
-        this.statusDiv.className = '';
+    updateUserList() {
+        fetch('/get_user_list')
+        .then(response => response.json())
+        .then(data => {
+            const userList = document.getElementById('user-list');
+            if (userList) {
+                userList.innerHTML = '';
+                if (data && data.length > 0) {
+                    data.forEach(user => {
+                        const row = document.createElement('tr');
+                        const createdAt = user.created_at || '暂无';
+                        row.innerHTML = `
+                            <td>${user.username || ''}</td>
+                            <td>${user.latest_emotion || '暂无'}</td>
+                            <td>${createdAt}</td>
+                        `;
+                        userList.appendChild(row);
+                    });
+                } else {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td colspan="3" style="text-align: center;">暂无记录</td>
+                    `;
+                    userList.appendChild(row);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('更新用户列表失败:', error);
+            const userList = document.getElementById('user-list');
+            if (userList) {
+                userList.innerHTML = `
+                    <tr>
+                        <td colspan="3" style="text-align: center; color: red;">
+                            加载失败，请刷新页面重试
+                        </td>
+                    </tr>
+                `;
+            }
+        });
     }
 
-    showLoading(message) {
-        this.statusDiv.textContent = message;
-        this.statusDiv.className = 'loading';
-    }
-    
-    showError(message) {
-        this.statusDiv.textContent = message;
-        this.statusDiv.className = 'error';
-    }
-    
-    showSuccess(message) {
-        this.statusDiv.textContent = message;
-        this.statusDiv.className = 'success';
+    // 添加切换标签页的方法
+    switchTab(tabId) {
+        // 更新导航链接状态
+        document.querySelectorAll('.sidebar nav a').forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('data-tab') === tabId) {
+                link.classList.add('active');
+            }
+        });
+
+        // 更新内容区域显示
+        document.querySelectorAll('.content-section').forEach(section => {
+            section.classList.remove('active');
+        });
+        const targetSection = document.getElementById(`${tabId}-section`);
+        if (targetSection) {
+            targetSection.classList.add('active');
+        }
+
+        // 根据标签页执行相应的操作
+        if (tabId === 'user-list') {
+            this.updateUserList();
+        } else if (tabId === 'emotion-analysis') {
+            this.updateEmotionChart();
+        }
     }
 }
 
+// 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
-    const faceAuth = new FaceAuth();
-    faceAuth.setupCamera();
+    new FaceAuth();
 });

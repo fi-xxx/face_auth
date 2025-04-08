@@ -14,11 +14,6 @@
             <video id="video" autoplay></video>
             <canvas id="canvas"></canvas>
             
-            <!-- 活体检测提示 -->
-            <div id="liveDetection" style="display: none;">
-                <p id="detectionInstruction">请眨眨眼完成活体检测</p>
-            </div>
-
             <!-- 用户名输入框默认隐藏 -->
             <div id="registerForm" class="form-group" style="display: none;">
                 <div class="input-button-group">
@@ -27,7 +22,8 @@
                 </div>
             </div>
 
-            <button id="capture">开始识别</button>
+            <button id="detect-face">开始识别</button>
+            <div id="blink-text"></div>
             <div id="status"></div>
         </div>
     </div>
