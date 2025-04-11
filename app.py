@@ -10,6 +10,7 @@ from functools import wraps  # 用于装饰器
 from deepface import DeepFace
 from PIL import Image
 import io
+from contextlib import contextmanager
 
 # 配置部分
 class Config:
@@ -40,6 +41,78 @@ class Config:
         'high_std_threshold': 60,
         'brightness_threshold': 130
     }
+
+    # 添加情绪映射配置
+    EMOTION_MAP = {
+        'happy': '开心',
+        'sad': '伤心',
+        'angry': '愤怒',
+        'fear': '恐惧',
+        'surprise': '惊讶',
+        'neutral': '平静',
+        'disgust': '厌恶'
+    }
+
+
+
+#  图像处理工具类
+class ImageProcessor:
+    @staticmethod
+    def decode_base64_image(base64_string):
+        try:
+            # 处理可能的 data:image/jpeg;base64, 前缀
+            if ',' in base64_string:
+                base64_string = base64_string.split(',')[1]
+            image_bytes = base64.b64decode(base64_string)
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise ValueError('图片解码失败')
+            return img
+        except Exception as e:
+            raise ValueError(f'图片处理失败: {str(e)}')
+
+    @staticmethod
+    def check_image_quality(img):
+        if img.shape[0] < Config.FACE_RECOGNITION['min_quality_width'] or \
+           img.shape[1] < Config.FACE_RECOGNITION['min_quality_height']:
+            raise ValueError('图像质量太低，请调整距离')
+        return True
+
+#  情绪分析工具类
+class EmotionAnalyzer:
+    @staticmethod
+    def analyze(img):
+        try:
+            result = DeepFace.analyze(
+                img,
+                actions=['emotion'],
+                enforce_detection=True,
+                detector_backend='opencv'
+            )
+            emotion = result[0]['dominant_emotion']
+            return Config.EMOTION_MAP.get(emotion, '平静')
+        except Exception as e:
+            raise ValueError(f'情绪分析失败: {str(e)}')
+
+
+#  数据库上下文管理器
+@contextmanager
+def get_db():
+    conn = get_db_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+#  统一的响应格式
+def make_response(success=True, message='', data=None):
+    return jsonify({
+        'status': 'success' if success else 'error',
+        'message': message,
+        **(({'data': data} if data else {}))
+    })
+
 
 # 初始化 Flask 应用
 app = Flask(__name__, 
@@ -99,60 +172,19 @@ def eye_aspect_ratio(eye):
         # 计算纵横比
         ear = (A + B) / (2.0 * C)
         
-        print(f"眼睛关键点: {eye}")
-        print(f"垂直距离 A: {A}, B: {B}")
-        print(f"水平距离 C: {C}")
-        print(f"纵横比 EAR: {ear}")
+        # print(f"眼睛关键点: {eye}")
+        # print(f"垂直距离 A: {A}, B: {B}")
+        # print(f"水平距离 C: {C}")
+        # print(f"纵横比 EAR: {ear}")
         
         return ear
     except Exception as e:
-        print(f"计算眼睛纵横比错误: {str(e)}")
+        # print(f"计算眼睛纵横比错误: {str(e)}")
         return 0.3  # 返回一个默认值
 
 def calculate_face_distance(known_face_encoding, face_encoding_to_check):
     """计算人脸距离"""
     return face_recognition.face_distance([known_face_encoding], face_encoding_to_check)[0]
-
-def detect_emotion(img_data):
-    """
-    使用 DeepFace 预训练模型进行情绪识别
-    
-    参数:
-        img_data: 图片数据
-    返回:
-        emotion: 检测到的情绪
-    """
-    try:
-        # 将图片数据转换为 PIL Image
-        img = Image.open(io.BytesIO(img_data))
-        img = np.array(img)
-        
-        # 使用 DeepFace 进行情绪分析
-        result = DeepFace.analyze(
-            img, 
-            actions=['emotion'],
-            enforce_detection=False  # 如果人脸检测失败，不抛出异常
-        )
-        
-        # 获取情绪结果
-        emotion = result[0]['dominant_emotion']
-        
-        # 将英文情绪映射为中文
-        emotion_map = {
-            'happy': '开心',
-            'sad': '伤心',
-            'angry': '愤怒',
-            'fear': '恐惧',
-            'surprise': '惊讶',
-            'neutral': '平静',
-            'disgust': '厌恶'
-        }
-        
-        return emotion_map.get(emotion, '平静')
-        
-    except Exception as e:
-        print(f"情绪检测错误: {str(e)}")
-        return '平静'  # 发生错误时返回默认情绪
 
 # 装饰器
 def login_required(f):
@@ -180,13 +212,12 @@ def detect_action():
     """眨眼检测路由"""
     try:
         image_data = request.json['image']
-        nparr = np.frombuffer(base64.b64decode(image_data.split(',')[1]), np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img = ImageProcessor.decode_base64_image(image_data)
         
         # 获取人脸关键点
         face_landmarks = face_recognition.face_landmarks(img)
         if not face_landmarks:
-            return jsonify({'detected': False, 'message': '未检测到人脸特征点'})
+            return make_response(False, '未检测到人脸特征点')
         
         landmarks = face_landmarks[0]
         
@@ -199,27 +230,19 @@ def detect_action():
         right_ear = eye_aspect_ratio(right_eye)
         ear = (left_ear + right_ear) / 2
         
-        # 调整眨眼阈值，使其更严格
-        EYE_AR_THRESH = 0.19  # 降低阈值，使其更难触发
+        # 眨眼阈值
+        EYE_AR_THRESH = 0.22
         
         if ear < EYE_AR_THRESH:
             print(f"检测到眨眼 - EAR: {ear}")
-            return jsonify({
-                'detected': True, 
-                'message': '检测到眨眼',
-                'ear': ear
-            })
+            return make_response(True, '检测到眨眼', {'ear': ear})
         
         print(f"未检测到眨眼 - EAR: {ear}")
-        return jsonify({
-            'detected': False, 
-            'message': '请眨眼',
-            'ear': ear
-        })
+        return make_response(False, '请眨眼', {'ear': ear})
         
     except Exception as e:
         print(f"眨眼检测错误: {str(e)}")
-        return jsonify({'detected': False, 'message': str(e)})
+        return make_response(False, str(e))
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -229,328 +252,205 @@ def register():
         username = request.json.get('username', '').strip()
         
         if not username:
-            return jsonify({'success': False, 'message': '请输入姓名'})
+            return make_response(False, '请输入姓名')
         
         # 解码图像
-        image_data = base64.b64decode(image_data.split(',')[1])
-        nparr = np.frombuffer(image_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img = ImageProcessor.decode_base64_image(image_data)
         
         # 检测人脸
         face_locations = face_recognition.face_locations(img)
         if not face_locations:
-            return jsonify({'success': False, 'message': '未检测到人脸'})
+            return make_response(False, '未检测到人脸')
             
         # 检查图像质量
-        if img.shape[0] < Config.FACE_RECOGNITION['min_quality_width'] or \
-           img.shape[1] < Config.FACE_RECOGNITION['min_quality_height']:
-            return jsonify({'success': False, 'message': '图像质量太低，请调整距离'})
+        ImageProcessor.check_image_quality(img)
             
         # 获取人脸编码
         face_encoding = face_recognition.face_encodings(img)[0]
         
         # 检查是否与现有用户太相似
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT face_encoding FROM users')
-        existing_users = cursor.fetchall()
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT face_encoding FROM users')
+            existing_users = cursor.fetchall()
+            
+            for existing_user in existing_users:
+                stored_encoding = np.frombuffer(base64.b64decode(existing_user[0]), dtype=np.float64)
+                distance = calculate_face_distance(stored_encoding, face_encoding)
+                if distance < Config.FACE_RECOGNITION['face_distance_threshold']:
+                    return make_response(False, '已存在相似用户，请重试')
+            
+            # 保存用户信息
+            face_encoding_str = base64.b64encode(face_encoding).decode('utf-8')
+            cursor.execute(
+                'INSERT INTO users (username, face_encoding) VALUES (%s, %s)',
+                (username, face_encoding_str)
+            )
+            conn.commit()
+            session['user_id'] = cursor.lastrowid
         
-        for existing_user in existing_users:
-            stored_encoding = np.frombuffer(base64.b64decode(existing_user[0]), dtype=np.float64)
-            distance = calculate_face_distance(stored_encoding, face_encoding)
-            if distance < Config.FACE_RECOGNITION['face_distance_threshold']:
-                cursor.close()
-                conn.close()
-                return jsonify({'success': False, 'message': '已存在相似用户，请重试'})
-        
-        # 保存用户信息
-        face_encoding_str = base64.b64encode(face_encoding).decode('utf-8')
-        cursor.execute(
-            'INSERT INTO users (username, face_encoding) VALUES (%s, %s)',
-            (username, face_encoding_str)
-        )
-        conn.commit()
-        session['user_id'] = cursor.lastrowid
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': '注册成功',
+        return make_response(True, '注册成功', {
             'username': username,
             'redirect': url_for('dashboard')
         })
         
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+        return make_response(False, str(e))
 
 @app.route('/check_face', methods=['POST'])
 def check_face():
     """检查人脸是否存在"""
     try:
         image_data = request.json['image']
-        
-        # 解码图像
-        image_data = base64.b64decode(image_data.split(',')[1])
-        nparr = np.frombuffer(image_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img = ImageProcessor.decode_base64_image(image_data)
         
         # 检测人脸
         face_locations = face_recognition.face_locations(img)
         if not face_locations:
-            return jsonify({'success': False, 'message': '未检测到人脸'})
+            return make_response(False, '未检测到人脸')
         
         # 获取人脸编码
         face_encoding = face_recognition.face_encodings(img)[0]
         
         # 检查是否已存在相似用户
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, username, face_encoding FROM users')
-        users = cursor.fetchall()
-        
-        min_distance = float('inf')
-        matched_user = None
-        
-        for user in users:
-            stored_encoding = np.frombuffer(base64.b64decode(user[2]), dtype=np.float64)
-            distance = calculate_face_distance(stored_encoding, face_encoding)
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, username, face_encoding FROM users')
+            users = cursor.fetchall()
             
-            if distance < min_distance:
-                min_distance = distance
-                matched_user = user
-        
-        if min_distance < Config.FACE_RECOGNITION['face_distance_threshold']:
-            session['user_id'] = matched_user[0]
-            cursor.close()
-            conn.close()
-            return jsonify({
-                'success': True,
-                'exists': True,
-                'username': matched_user[1]
+            min_distance = float('inf')
+            matched_user = None
+            
+            for user in users:
+                stored_encoding = np.frombuffer(base64.b64decode(user[2]), dtype=np.float64)
+                distance = calculate_face_distance(stored_encoding, face_encoding)
+                
+                if distance < min_distance:
+                    min_distance = distance
+                    matched_user = user
+            
+            if min_distance < Config.FACE_RECOGNITION['face_distance_threshold']:
+                session['user_id'] = matched_user[0]
+                return make_response(True, '找到匹配用户', {
+                    'exists': True,
+                    'username': matched_user[1]
+                })
+            
+            return make_response(True, '未找到匹配用户', {
+                'exists': False
             })
         
-        cursor.close()
-        conn.close()
-        return jsonify({
-            'success': True,
-            'exists': False
-        })
-        
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/login', methods=['POST'])
-def login():
-    """登录路由"""
-    try:
-        image_data = request.json['image']
-        
-        # 解码图像
-        image_data = base64.b64decode(image_data.split(',')[1])
-        nparr = np.frombuffer(image_data, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        # 获取人脸编码
-        face_encoding = face_recognition.face_encodings(img)[0]
-        
-        # 查找匹配用户
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, username, face_encoding FROM users')
-        users = cursor.fetchall()
-        
-        for user in users:
-            stored_encoding = np.frombuffer(base64.b64decode(user[2]), dtype=np.float64)
-            matches = face_recognition.compare_faces(
-                [stored_encoding], 
-                face_encoding, 
-                tolerance=Config.FACE_RECOGNITION['login_tolerance']
-            )
-            if matches[0]:
-                session['user_id'] = user[0]
-                cursor.close()
-                conn.close()
-                return jsonify({
-                    'success': True,
-                    'message': '登录成功',
-                    'username': user[1],
-                    'redirect': url_for('dashboard')
-                })
-        
-        cursor.close()
-        conn.close()
-        return jsonify({'success': False, 'message': '用户不存在'})
-        
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-# 添加新的路由
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    
-    # 获取当前用户信息
-    cursor.execute('SELECT username FROM users WHERE id = %s', (session['user_id'],))
-    current_user = cursor.fetchone()['username']
-    
-    # 获取所有用户及其最新情绪
-    cursor.execute('''
-        SELECT 
-            u.id,
-            u.username,
-            e.emotion as latest_emotion,
-            e.created_at as emotion_time
-        FROM users u
-        LEFT JOIN (
-            SELECT user_id, emotion, created_at,
-                   ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) as rn
-            FROM emotions
-        ) e ON u.id = e.user_id AND e.rn = 1
-        ORDER BY u.created_at DESC
-    ''')
-    users = cursor.fetchall()
-    
-    cursor.close()
-    conn.close()
-    
-    return render_template('dashboard.html', current_user=current_user, users=users)
+        return make_response(False, str(e))
 
 @app.route('/logout', methods=['POST'])
 def logout():
     session.clear()
-    return jsonify({'success': True})
+    return make_response(True, '已退出登录')
 
-# 情绪记录路由
 @app.route('/record_emotion', methods=['POST'])
+@login_required
 def record_emotion():
+    """情绪记录路由"""
     try:
-        if 'user_id' not in session:
-            return jsonify({'status': 'error', 'message': '请先登录'})
-        
-        # 获取 JSON 数据
+        # 1. 获取并验证图片数据
         data = request.get_json()
         if not data or 'image' not in data:
-            return jsonify({'status': 'error', 'message': '未收到图片数据'})
+            return make_response(False, '未收到图片数据')
         
         try:
-            # 解码 base64 图片数据
-            image_data = data['image'].split(',')[1]
-            image_bytes = base64.b64decode(image_data)
-            
-            # 转换为 OpenCV 格式
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
+            # 2. 解码和处理图片
+            img = ImageProcessor.decode_base64_image(data['image'])
             if img is None:
-                return jsonify({'status': 'error', 'message': '图片解码失败'})
+                return make_response(False, '图片解码失败')
+
+            # 3. 调整图像大小
+            img = cv2.resize(img, (224, 224))
             
-            # 使用 DeepFace 进行情绪分析
+            # 4. 使用 DeepFace 进行情绪分析
             result = DeepFace.analyze(
                 img, 
                 actions=['emotion'],
-                enforce_detection=False
+                enforce_detection=True,  # 强制进行人脸检测
+                detector_backend='opencv'  # 使用 OpenCV 检测器
             )
             
+            # 5. 获取情绪结果
             emotion = result[0]['dominant_emotion']
-            emotion_map = {
-                'happy': '开心',
-                'sad': '伤心',
-                'angry': '愤怒',
-                'fear': '恐惧',
-                'surprise': '惊讶',
-                'neutral': '平静',
-                'disgust': '厌恶'
-            }
-            detected_emotion = emotion_map.get(emotion, '平静')
+            emotions = result[0]['emotion']  # 获取所有情绪概率
             
-            # 记录到数据库
-            conn = get_db_connection()
-            cursor = conn.cursor()
+            # 6. 情绪映射
+            detected_emotion = Config.EMOTION_MAP.get(emotion, '平静')
             
-            current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            
-            # 修改 SQL 语句，使用正确的列名
-            cursor.execute(
-                "INSERT INTO emotions (user_id, emotion, created_at) VALUES (%s, %s, %s)",
-                (session['user_id'], detected_emotion, current_time)
+            # 7. 记录到数据库
+            with get_db() as conn:
+                cursor = conn.cursor()
+                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                cursor.execute(
+                    "INSERT INTO emotions (user_id, emotion, created_at) VALUES (%s, %s, %s)",
+                    (session['user_id'], detected_emotion, current_time)
+                )
+                conn.commit()
+
+            # 8. 返回结果
+            return make_response(
+                True,
+                f'情绪 {detected_emotion} 已记录',
+                {
+                    'emotion': detected_emotion,
+                    'details': {
+                        'probabilities': emotions,  # 返回所有情绪的概率
+                        'timestamp': current_time
+                    }
+                }
             )
             
-            conn.commit()
-            cursor.close()
-            conn.close()
-            
-            return jsonify({
-                'status': 'success',
-                'emotion': detected_emotion,
-                'message': f'情绪 {detected_emotion} 已记录'
-            })
+        except ValueError as ve:
+            print(f"人脸检测失败: {str(ve)}")
+            return make_response(False, '未能检测到人脸，请调整姿势或光线')
             
         except Exception as e:
             print(f"处理图片数据时出错: {str(e)}")
-            return jsonify({
-                'status': 'error',
-                'message': f'处理图片时发生错误: {str(e)}'
-            })
+            return make_response(False, f'处理图片时发生错误: {str(e)}')
             
     except Exception as e:
-        print(f"处理请求时发生错误: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f'记录情绪时发生错误: {str(e)}'
-        })
+        print(f"请求处理错误: {str(e)}")
+        return make_response(False, f'记录情绪时发生错误: {str(e)}')
 
 @app.route('/search_users', methods=['GET'])
 def search_users():
     try:
-        # 获取搜索关键词
         search_query = request.args.get('query', '').strip()
         
-        # 连接数据库
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        with get_db() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT 
+                    u.username,
+                    e.emotion as latest_emotion,
+                    e.created_at as emotion_time
+                FROM users u
+                LEFT JOIN (
+                    SELECT user_id, emotion, created_at,
+                           ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) as rn
+                    FROM emotions
+                ) e ON u.id = e.user_id AND e.rn = 1
+                WHERE u.username LIKE %s
+                ORDER BY e.created_at DESC
+            """, (f'%{search_query}%',))
+            
+            users = cursor.fetchall()
+            
+            # 处理时间格式
+            for user in users:
+                if user['emotion_time']:
+                    user['emotion_time'] = user['emotion_time'].strftime('%Y-%m-%d %H:%M:%S')
         
-        # 构建SQL查询
-        sql = """
-        SELECT 
-            u.username,
-            e.emotion as latest_emotion,
-            e.created_at as emotion_time
-        FROM users u
-        LEFT JOIN (
-            SELECT user_id, emotion, created_at,
-                   ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) as rn
-            FROM emotions
-        ) e ON u.id = e.user_id AND e.rn = 1
-        WHERE u.username LIKE %s
-        ORDER BY e.created_at DESC
-        """
-        
-        # 执行查询
-        cursor.execute(sql, (f'%{search_query}%',))
-        users = cursor.fetchall()
-        
-        # 处理时间格式
-        for user in users:
-            if user['emotion_time']:
-                user['emotion_time'] = user['emotion_time'].strftime('%Y-%m-%d %H:%M:%S')
-        
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
-            'status': 'success',
-            'users': users
-        })
+        return make_response(True, '搜索成功', {'users': users})
         
     except Exception as e:
-        print(f"搜索错误: {str(e)}")  # 添加错误日志
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        print(f"搜索错误: {str(e)}")
+        return make_response(False, str(e))
 
 @app.route('/get_emotion_history', methods=['GET'])
 @login_required
@@ -559,50 +459,47 @@ def get_emotion_history():
     try:
         days = int(request.args.get('days', 7))
         
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        # 获取指定天数的情绪记录
-        cursor.execute('''
-            SELECT 
-                DATE(created_at) as date,
-                emotion,
-                COUNT(*) as count
-            FROM emotions
-            WHERE user_id = %s
-            AND created_at >= DATE_SUB(CURRENT_DATE, INTERVAL %s DAY)
-            GROUP BY DATE(created_at), emotion
-            ORDER BY date
-        ''', (session['user_id'], days))
-        
-        records = cursor.fetchall()
-        
-        # 获取统计信息 - 修改为使用子查询获取主要情绪
-        cursor.execute('''
-            SELECT 
-                COUNT(*) as total_records,
-                COUNT(DISTINCT DATE(created_at)) as total_days,
-                (
-                    SELECT emotion
-                    FROM (
-                        SELECT emotion, COUNT(*) as emotion_count
-                        FROM emotions
-                        WHERE user_id = %s
-                        AND created_at >= DATE_SUB(CURRENT_DATE, INTERVAL %s DAY)
-                        GROUP BY emotion
-                        ORDER BY emotion_count DESC
-                        LIMIT 1
-                    ) as most_common
-                ) as main_emotion
-            FROM emotions
-            WHERE user_id = %s
-            AND created_at >= DATE_SUB(CURRENT_DATE, INTERVAL %s DAY)
-        ''', (session['user_id'], days, session['user_id'], days))
-        
-        stats = cursor.fetchone()
-        
-        cursor.close()
-        conn.close()
+        with get_db() as conn:
+            cursor = conn.cursor(dictionary=True)
+            
+            # 获取指定天数的情绪记录
+            cursor.execute('''
+                SELECT 
+                    DATE(created_at) as date,
+                    emotion,
+                    COUNT(*) as count
+                FROM emotions
+                WHERE user_id = %s
+                AND created_at >= DATE_SUB(CURRENT_DATE, INTERVAL %s DAY)
+                GROUP BY DATE(created_at), emotion
+                ORDER BY date
+            ''', (session['user_id'], days))
+            
+            records = cursor.fetchall()
+            
+            # 获取统计信息
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total_records,
+                    COUNT(DISTINCT DATE(created_at)) as total_days,
+                    (
+                        SELECT emotion
+                        FROM (
+                            SELECT emotion, COUNT(*) as emotion_count
+                            FROM emotions
+                            WHERE user_id = %s
+                            AND created_at >= DATE_SUB(CURRENT_DATE, INTERVAL %s DAY)
+                            GROUP BY emotion
+                            ORDER BY emotion_count DESC
+                            LIMIT 1
+                        ) as most_common
+                    ) as main_emotion
+                FROM emotions
+                WHERE user_id = %s
+                AND created_at >= DATE_SUB(CURRENT_DATE, INTERVAL %s DAY)
+            ''', (session['user_id'], days, session['user_id'], days))
+            
+            stats = cursor.fetchone()
         
         # 处理数据格式
         dates = sorted(list(set(record['date'].strftime('%Y-%m-%d') for record in records)))
@@ -630,25 +527,19 @@ def get_emotion_history():
         # 计算情绪波动指数
         variation = calculate_emotion_variation(records) if records else 0
         
-        return jsonify({
-            'success': True,
-            'data': {
-                'labels': dates,
-                'datasets': datasets,
-                'stats': {
-                    'mainEmotion': stats['main_emotion'] or '-',
-                    'emotionVariation': f"{variation:.1f}",
-                    'recordCount': stats['total_records']
-                }
+        return make_response(True, '获取成功', {
+            'labels': dates,
+            'datasets': datasets,
+            'stats': {
+                'mainEmotion': stats['main_emotion'] or '-',
+                'emotionVariation': f"{variation:.1f}",
+                'recordCount': stats['total_records']
             }
         })
         
     except Exception as e:
         print(f"获取情绪历史数据错误: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': str(e)
-        }), 500
+        return make_response(False, str(e))
 
 def get_emotion_color(emotion, alpha=1):
     """获取情绪对应的颜色"""
@@ -689,61 +580,53 @@ def calculate_emotion_variation(records):
 @app.route('/get_user_list')
 def get_user_list():
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        with get_db() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT 
+                    u.username,
+                    e.emotion as latest_emotion,
+                    DATE_FORMAT(e.created_at, '%Y-%m-%d %H:%i:%s') as emotion_time
+                FROM users u
+                LEFT JOIN (
+                    SELECT user_id, emotion, created_at,
+                        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) as rn
+                    FROM emotions
+                ) e ON u.id = e.user_id AND e.rn = 1
+                ORDER BY e.created_at DESC
+            """)
+            
+            users = cursor.fetchall()
         
-        # 修改 SQL 查询，获取最新的情绪记录
-        cursor.execute("""
-            SELECT 
-                u.username,
-                e.emotion as latest_emotion,
-                DATE_FORMAT(e.created_at, '%Y-%m-%d %H:%i:%s') as created_at
-            FROM users u
-            LEFT JOIN (
-                SELECT user_id, emotion, created_at,
-                    ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) as rn
-                FROM emotions
-            ) e ON u.id = e.user_id AND e.rn = 1
-            ORDER BY e.created_at DESC
-        """)
-        
-        users = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        return jsonify(users)
+        return make_response(True, '获取成功', users)
         
     except Exception as e:
         print(f"获取用户列表失败: {str(e)}")
-        return jsonify([])
+        return make_response(False, str(e))
 
 @app.route('/get_emotion_stats')
 def get_emotion_stats():
     try:
         if 'user_id' not in session:
-            return jsonify({'status': 'error', 'message': '请先登录'})
+            return make_response(False, '请先登录')
             
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        with get_db() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT 
+                    emotion,
+                    COUNT(*) as count,
+                    DATE(created_at) as date
+                FROM emotions
+                WHERE user_id = %s
+                AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                GROUP BY emotion, DATE(created_at)
+                ORDER BY date
+            """, (session['user_id'],))
+            
+            stats = cursor.fetchall()
         
-        # 获取用户最近的情绪统计
-        cursor.execute("""
-            SELECT 
-                emotion,
-                COUNT(*) as count,
-                DATE(created_at) as date
-            FROM emotions
-            WHERE user_id = %s
-            AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-            GROUP BY emotion, DATE(created_at)
-            ORDER BY date
-        """, (session['user_id'],))
-        
-        stats = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        
-        return jsonify({
+        return make_response(True, '获取成功', {
             'labels': list(set(stat['date'].strftime('%Y-%m-%d') for stat in stats)),
             'datasets': [
                 {
@@ -756,7 +639,55 @@ def get_emotion_stats():
         
     except Exception as e:
         print(f"获取情绪统计失败: {str(e)}")
-        return jsonify({'status': 'error', 'message': str(e)})
+        return make_response(False, str(e))
+
+
+
+# 8. 优化后的登录路由
+@app.route('/login', methods=['POST'])
+def login():
+    try:
+        # 获取图片数据
+        image_data = request.json['image']
+        img = ImageProcessor.decode_base64_image(image_data)
+        
+        # 获取人脸编码
+        face_encoding = face_recognition.face_encodings(img)[0]
+        
+        # 查找匹配用户
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, username, face_encoding FROM users')
+            users = cursor.fetchall()
+            
+            for user in users:
+                stored_encoding = np.frombuffer(base64.b64decode(user[2]), dtype=np.float64)
+                matches = face_recognition.compare_faces(
+                    [stored_encoding], 
+                    face_encoding, 
+                    tolerance=Config.FACE_RECOGNITION['login_tolerance']
+                )
+                if matches[0]:
+                    session['user_id'] = user[0]
+                    return make_response(
+                        True,
+                        '登录成功',
+                        {
+                            'username': user[1],
+                            'redirect': url_for('dashboard')
+                        }
+                    )
+            
+            return make_response(False, '用户不存在')
+            
+    except Exception as e:
+        return make_response(False, str(e))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    """仪表板路由"""
+    return render_template('dashboard.html')
 
 if __name__ == '__main__':
     init_db()

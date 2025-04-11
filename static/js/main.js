@@ -105,7 +105,7 @@ class FaceAuth {
         })
         .then(response => response.json())
         .then(data => {
-            if (data.detected) {
+            if (data.status === 'success') {
                 this.blinkCount++;
                 this.blinkText.textContent = `检测到眨眼 ${this.blinkCount} 次`;
                 
@@ -113,6 +113,8 @@ class FaceAuth {
                     this.checkFace();
                     return;
                 }
+            } else {
+                this.blinkText.textContent = data.message || '请眨眼';
             }
             
             this.detectionAttempts++;
@@ -147,15 +149,19 @@ class FaceAuth {
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success && data.exists) {
+            if (data.status === 'success' && data.data && data.data.exists) {
                 window.location.href = '/dashboard';
             } else {
                 this.blinkText.textContent = data.message || '验证失败，请重试';
+                this.blinkCount = 0;
+                this.detectionAttempts = 0;
             }
         })
         .catch(error => {
             console.error('验证错误:', error);
             this.blinkText.textContent = '验证出错，请重试';
+            this.blinkCount = 0;
+            this.detectionAttempts = 0;
         });
     }
 

@@ -358,6 +358,7 @@ body {
 .emotion-badge.惊讶 { background-color: #b8c0ff; color: #2c3784; }
 .emotion-badge.疲惫 { background-color: #e9ecef; color: #495057; }
 .emotion-badge.neutral { background-color: #e9ecef; color: #495057; }
+.emotion-badge.恐惧 { background-color: #D6A2E8; color: #4A235A; }
 
 .capture-controls {
     margin-top: 20px;
