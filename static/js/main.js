@@ -31,6 +31,11 @@ class FaceAuth {
             this.detectButton.addEventListener('click', () => this.detectFace());
         }
         
+        // 注册按钮事件
+        if (this.confirmRegister) {
+            this.confirmRegister.addEventListener('click', () => this.registerUser());
+        }
+        
         // 仪表板页面事件
         if (this.captureButton) {
             this.captureButton.addEventListener('click', () => this.captureEmotion());
@@ -152,7 +157,13 @@ class FaceAuth {
             if (data.status === 'success' && data.data && data.data.exists) {
                 window.location.href = '/dashboard';
             } else {
-                this.blinkText.textContent = data.message || '验证失败，请重试';
+                // 如果是未注册用户，显示注册表单
+                if (data.message === '未找到匹配用户，请先注册') {
+                    this.registerForm.style.display = 'block';
+                    this.blinkText.textContent = '请填写姓名完成注册';
+                } else {
+                    this.blinkText.textContent = data.message || '验证失败，请重试';
+                }
                 this.blinkCount = 0;
                 this.detectionAttempts = 0;
             }
@@ -162,6 +173,50 @@ class FaceAuth {
             this.blinkText.textContent = '验证出错，请重试';
             this.blinkCount = 0;
             this.detectionAttempts = 0;
+        });
+    }
+
+    registerUser() {
+        if (!this.username.value.trim()) {
+            this.blinkText.textContent = '请输入姓名';
+            return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = this.video.videoWidth;
+        canvas.height = this.video.videoHeight;
+        
+        const context = canvas.getContext('2d');
+        context.drawImage(this.video, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = canvas.toDataURL('image/jpeg');
+
+        this.blinkText.textContent = '正在注册...';
+
+        fetch('/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                image: imageData,
+                username: this.username.value.trim()
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                this.blinkText.textContent = '注册成功，正在跳转...';
+                setTimeout(() => {
+                    window.location.href = '/dashboard';
+                }, 1000);
+            } else {
+                this.blinkText.textContent = data.message || '注册失败，请重试';
+            }
+        })
+        .catch(error => {
+            console.error('注册错误:', error);
+            this.blinkText.textContent = '注册出错，请重试';
         });
     }
 

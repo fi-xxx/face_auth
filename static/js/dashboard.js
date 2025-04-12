@@ -10,6 +10,18 @@ class DashboardManager {
         this.logoutBtn = document.getElementById('logoutBtn');
         this.emotionChart = null;
 
+        // 情绪颜色映射
+        this.emotionColors = {
+            '开心': '#E8F5E9',
+            '伤心': '#FFEBEE',
+            '愤怒': '#FFF3E0',
+            '平静': '#E3F2FD',
+            '惊讶': '#F3E5F5',
+            '疲惫': '#FAFAFA',
+            '恐惧': '#EDE7F6',
+            '厌恶': '#E0F2F1'
+        };
+
         // 初始化
         this.initializeEventListeners();
         this.updateUserList();
@@ -101,7 +113,14 @@ class DashboardManager {
             const canvas = document.createElement('canvas');
             canvas.width = this.video.videoWidth;
             canvas.height = this.video.videoHeight;
-            canvas.getContext('2d').drawImage(this.video, 0, 0);
+            const context = canvas.getContext('2d');
+            context.drawImage(this.video, 0, 0, canvas.width, canvas.height);
+            
+            // 确保图像质量
+            if (canvas.width < 200 || canvas.height < 200) {
+                throw new Error('图像分辨率过低，请调整摄像头位置');
+            }
+            
             const imageData = canvas.toDataURL('image/jpeg');
             
             // 发送请求
@@ -153,8 +172,8 @@ class DashboardManager {
         try {
             const response = await fetch(`/search_users?query=${encodeURIComponent(query)}`);
             const data = await response.json();
-            if (data.status === 'success' && data.data) {
-                this.updateUsersTable(data.data);
+            if (data.status === 'success' && data.data && data.data.users) {
+                this.updateUsersTable(data.data.users);
             } else {
                 this.showAlert('搜索失败', data.message || '未知错误', 'error');
             }
@@ -173,14 +192,19 @@ class DashboardManager {
         if (users && users.length > 0) {
             users.forEach(user => {
                 const tr = document.createElement('tr');
+                const emotion = user.latest_emotion || '暂无';
+                const emotionClass = emotion !== '暂无' ? `emotion-badge ${emotion}` : '';
+                const emotionStyle = emotion !== '暂无' ? 
+                    `background-color: ${this.emotionColors[emotion] || '#FAFAFA'}; color: #333;` : '';
+                
                 tr.innerHTML = `
                     <td>${this.escapeHtml(user.username)}</td>
                     <td>
-                        <span class="emotion-badge ${user.latest_emotion || 'neutral'}">
-                            ${user.latest_emotion || '暂无记录'}
+                        <span class="${emotionClass}" style="${emotionStyle}">
+                            ${emotion}
                         </span>
                     </td>
-                    <td>${user.emotion_time || '暂无记录'}</td>
+                    <td>${user.emotion_time || '暂无'}</td>
                 `;
                 tbody.appendChild(tr);
             });

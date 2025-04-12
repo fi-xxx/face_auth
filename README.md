@@ -1,4 +1,4 @@
-# 人脸识别情绪分析系统
+# 人脸识别情绪分析系统(An Intelligent Emotion Analysis System Based on Facial Recognition)
 
 基于 Flask 和深度学习的人脸识别登录系统，集成了人脸识别、活体检测和情绪分析功能。
 
@@ -61,11 +61,11 @@ cd face-auth-flask
 
 ```bash
 # Windows
-python -m venv venv
+python -m .venv .venv
 .\venv\Scripts\activate
 
 # Linux/Mac
-python -m venv venv
+python -m .venv .venv
 source venv/bin/activate
 ```
 
